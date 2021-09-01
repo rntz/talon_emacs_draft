@@ -28,6 +28,11 @@ lisp_copy_draft = '''
   (shell-command-on-region (point-min) (point-max) "xsel -ib"))
 '''
 
+lisp_edit_empty = """
+(with-current-buffer (switch-to-buffer "*Draft*")
+  (kill-region (point-min) (point-max)))
+"""
+
 lisp_edit_clipboard = '''
 (with-current-buffer (switch-to-buffer "*Draft*")
   (goto-char (point-min))
@@ -37,8 +42,8 @@ lisp_edit_clipboard = '''
 
 @mod.action_class
 class ModuleActions:
-    def emacs_draft_clipboard():
-        """Focus or create an appropriate emacs window, switch to the draft buffer, and update it to clipboard contents."""
+    def emacs_draft_run(lisp_code: str):
+        """Focus an emacs window (optionally creating it) and run the given emacs lisp code in it."""
         # If there's an emacs window on the current workspace, reuse it;
         # otherwise, create one.
         reuse_window = False
@@ -49,13 +54,19 @@ class ModuleActions:
                                          for w in emacs.windows())
         except: pass
         if not reuse_window:
-            # Make a new emacs window editing clipboard.
-            ui.launch(path='emacsclient', args=['-nca', '', '-e', lisp_edit_clipboard])
+            ui.launch(path='emacsclient', args=['-nca', '', '-e', lisp_code])
             actions.sleep("400ms")
         actions.user.switcher_focus("Emacs")
         if reuse_window:
-            # Tell the focused window to edit the clipboard.
-            ui.launch(path='emacsclient', args=['-e', lisp_edit_clipboard])
+            ui.launch(path='emacsclient', args=['-e', lisp_code])
+
+    def emacs_draft_empty():
+        """Open an empty emacs draft buffer."""
+        actions.user.emacs_draft_run(lisp_edit_empty)
+
+    def emacs_draft_clipboard():
+        """Focus or create an appropriate emacs window, switch to the draft buffer, and update it to clipboard contents."""
+        actions.user.emacs_draft_run(lisp_edit_clipboard)
 
     def emacs_draft_selection(copy_or_cut: str = "default"):
         """Open an emacs draft buffer editing the current selection."""
@@ -66,7 +77,11 @@ class ModuleActions:
         clip.set_text("")
         actions.edit.copy() if copy_or_cut == "copy" else actions.edit.cut()
         clip.await_change(old="")
-        actions.user.emacs_draft_clipboard()
+        print(f"***** clip.text() = {clip.text()!r} *****")
+        if clip.text():
+            actions.user.emacs_draft_clipboard()
+        else:
+            actions.user.emacs_draft_empty()
 
     def emacs_draft_submit():
         """Submit the contents of the draft buffer."""

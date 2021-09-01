@@ -1,7 +1,8 @@
 emacs [draft] submit: user.emacs_draft_submit()
 emacs edit clipboard: user.emacs_draft_clipboard()
 
-emacs [{user.emacs_draft_copy_or_cut}] edit that:
+emacs draft: user.emacs_draft_empty()
+emacs [{user.emacs_draft_copy_or_cut}] edit (this|that):
   user.emacs_draft_selection(emacs_draft_copy_or_cut or "default")
 emacs [{user.emacs_draft_copy_or_cut}] edit line:
   edit.select_line()
