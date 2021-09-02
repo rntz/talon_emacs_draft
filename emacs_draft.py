@@ -1,4 +1,4 @@
-from talon import ui, Context, Module, actions, clip
+from talon import ui, Context, Module, actions, clip, app
 import subprocess
 
 mod = Module()
@@ -7,7 +7,7 @@ ctx = Context()
 setting_copy_or_cut = mod.setting(
     "emacs_draft_copy_or_cut",
     type=str,
-    desc="Whether to copy or cut by default",
+    desc="Whether to copy or cut stuff sent to emacs for editing by default.",
     default="cut")
 
 mod.list("emacs_draft_copy_or_cut",
@@ -17,15 +17,16 @@ ctx.lists["user.emacs_draft_copy_or_cut"] = ["copy", "cut"]
 # window from which `emacs edit` was invoked
 source_window = None
 
-# lisp_copy_draft = '''
-# (with-current-buffer "*Draft*"
-#   (gui-set-selection 'CLIPBOARD (buffer-substring-no-properties (point-min) (point-max))))
-# '''
-
-# This seems to work more reliably than emacs' built in clipboard commands. :(
-lisp_copy_draft = '''
+# `xsel` seems to work more reliably than Emacs' built in clipboard commands. :(
+# Prefer it, but fall back on e.g. Windows with an additional 0.5s delay.
+# TODO: is the delay necessary?
+lisp_submit_draft = '''
 (with-current-buffer "*Draft*"
-  (shell-command-on-region (point-min) (point-max) "xsel -ib"))
+  (if (executable-find "xsel")
+      (shell-command-on-region (point-min) (point-max) "xsel -ib")
+    (gui-select-text (buffer-substring-no-properties (point-min) (point-max)))
+    (sleep-for 0.5))
+  (bury-buffer))
 '''
 
 lisp_edit_empty = """
@@ -54,11 +55,15 @@ class ModuleActions:
                                          for w in emacs.windows())
         except: pass
         if not reuse_window:
-            ui.launch(path='emacsclient', args=['-nca', '', '-e', lisp_code])
+            ui.launch(path='emacsclient', args=['-ca', '', '-e', lisp_code])
             actions.sleep("400ms")
         actions.user.switcher_focus("Emacs")
         if reuse_window:
             ui.launch(path='emacsclient', args=['-e', lisp_code])
+
+    def emacs_draft_show():
+        """Opens the emacs draft buffer."""
+        actions.user.emacs_draft_run('(switch-to-buffer "*Draft*")')
 
     def emacs_draft_empty():
         """Open an empty emacs draft buffer."""
@@ -77,32 +82,30 @@ class ModuleActions:
         clip.set_text("")
         actions.edit.copy() if copy_or_cut == "copy" else actions.edit.cut()
         clip.await_change(old="")
-        print(f"***** clip.text() = {clip.text()!r} *****")
-        if clip.text():
-            actions.user.emacs_draft_clipboard()
-        else:
-            actions.user.emacs_draft_empty()
+        #print(f"***** clip.text() = {clip.text()!r} *****")
+        if clip.text(): actions.user.emacs_draft_clipboard()
+        else: actions.user.emacs_draft_empty()
 
     def emacs_draft_submit():
         """Submit the contents of the draft buffer."""
         # If we are in emacs, we want to focus source_window and paste in the
-        # contents of the current(?) buffer. Otherwise, we want to paste the
-        # contents of the draft buffer.
+        # contents of the draft buffer. Otherwise, we want to paste the contents
+        # of the draft buffer.
         try: in_emacs = ui.active_window().app == actions.user.get_running_app("Emacs")
         except: in_emacs = False
         if in_emacs:
-            if source_window is None:
-                raise ValueError("no source window")
-            elif source_window not in ui.windows():
-                raise ValueError("window no longer exists")
-            else:
-                source_window.focus()
-                # maybe we should use the contents of the current buffer?
+            if source_window not in ui.windows():
+                message = ("Don't know what window to submit to!"
+                           if source_window is None else
+                           "Window to submit to no longer exists!")
+                app.notify(title="emacs_draft.py", body=message)
+                raise ValueError(message)
+            source_window.focus()
+            # maybe use the contents of the current buffer instead?
 
         clip.clear()
-        ui.launch(path="emacsclient", args=['-e', lisp_copy_draft])
+        ui.launch(path="emacsclient", args=['-e', lisp_submit_draft])
         #print(f"********** before clip.text() = {clip.text()!r} **********")
         clip.await_change(timeout=0.5, old="")
-        # actions.sleep("200ms")
         #print(f"********** after  clip.text() = {clip.text()!r} **********")
         actions.edit.paste()
