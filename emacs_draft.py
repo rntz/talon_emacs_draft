@@ -77,6 +77,7 @@ class ModuleActions:
         """Open an emacs draft buffer editing the current selection."""
         assert copy_or_cut in ["copy", "cut", "default"]
         if copy_or_cut == "default": copy_or_cut = setting_copy_or_cut.get()
+        assert copy_or_cut in ["copy", "cut"]
         global source_window
         source_window = ui.active_window()
         clip.set_text("")
